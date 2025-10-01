@@ -857,16 +857,16 @@ function StartSessionForm({
 }
 
 function ActiveSessionDisplay({
-  _db,
   setDb,
   activeSession,
   setActiveSession,
 }: {
-  db: DB;
+  db: DB; // Prop existiert, wird hier nur nicht ausgelesen
   setDb: React.Dispatch<React.SetStateAction<DB>>;
   activeSession: ActiveSession;
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
 }) {
+
   const [schedule, setSchedule] = useState(activeSession.schedule);
 
   const winsNeeded = Math.ceil(activeSession.bestOf / 2);
