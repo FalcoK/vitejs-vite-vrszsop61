@@ -857,7 +857,7 @@ function StartSessionForm({
 }
 
 function ActiveSessionDisplay({
-  db,
+  _db,
   setDb,
   activeSession,
   setActiveSession,
