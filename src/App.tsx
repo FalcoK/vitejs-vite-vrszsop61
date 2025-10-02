@@ -669,7 +669,6 @@ function SessionManager({
     if (activeSession.type === '2v2') {
         return (
           <ActiveBestOfDisplay
-            db={db}
             setDb={setDb}
             activeSession={activeSession}
             setActiveSession={setActiveSession}
@@ -679,7 +678,6 @@ function SessionManager({
      if (activeSession.type === 'tournament') {
         return (
           <ActiveTournamentDisplay
-            db={db}
             setDb={setDb}
             activeSession={activeSession}
             setActiveSession={setActiveSession}
@@ -950,9 +948,8 @@ function ActiveBestOfDisplay({
     const sessionId = uid();
     const now = new Date().toISOString();
 
-    const playedBestOfMatches = schedule.filter((m): m is ActiveSessionMatch & { goalsA: number; goalsB: number } => m.goalsA !== null && m.goalsB !== null);
-
-    const newMatches: Match[] = playedBestOfMatches
+    const newMatches: Match[] = schedule
+      .filter((m): m is ActiveSessionMatch & { goalsA: number; goalsB: number } => m.goalsA !== null && m.goalsB !== null)
       .map((m) => ({
         id: uid(),
         dateISO: now,
@@ -1258,16 +1255,16 @@ function ActiveTournamentDisplay({
 
             statsA.played++;
             statsB.played++;
-            statsA.goalsFor += match.goalsA!;
-            statsA.goalsAgainst += match.goalsB!;
-            statsB.goalsFor += match.goalsB!;
-            statsB.goalsAgainst += match.goalsA!;
+            statsA.goalsFor += match.goalsA;
+            statsA.goalsAgainst += match.goalsB;
+            statsB.goalsFor += match.goalsB;
+            statsB.goalsAgainst += match.goalsA;
 
-            if (match.goalsA! > match.goalsB!) {
+            if (match.goalsA > match.goalsB) {
                 statsA.wins++;
                 statsB.losses++;
                 statsA.points += 3;
-            } else if (match.goalsB! > match.goalsA!) {
+            } else if (match.goalsB > match.goalsA) {
                 statsB.wins++;
                 statsA.losses++;
                 statsB.points += 3;
@@ -1878,5 +1875,4 @@ function SelectOrInput({
     </select>
   );
 }
-
 
