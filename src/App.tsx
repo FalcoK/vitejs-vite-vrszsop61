@@ -956,8 +956,8 @@ function ActiveBestOfDisplay({
         sessionId,
         teamAPlayers: m.teamA.players,
         teamBPlayers: m.teamB.players,
-        goalsA: m.goalsA!,
-        goalsB: m.goalsB!,
+        goalsA: m.goalsA as number,
+        goalsB: m.goalsB as number,
         teamAName: m.teamA.name,
         teamBName: m.teamB.name,
         enteredBy: 'Session',
@@ -1089,6 +1089,10 @@ function StartTournamentForm({
 
     function generateSchedule(players: Player[], numRounds: number): ActiveSessionMatch[] {
         let participants = [...players];
+        if (participants.length === 2 && numRounds > 2) {
+            numRounds = 2; // Limit 1v1 to Hin- und Rückrunde max
+        }
+        
         const isOdd = participants.length % 2 !== 0;
         if (isOdd) {
             // Add a dummy player for bye rounds
@@ -1121,7 +1125,9 @@ function StartTournamentForm({
 
             // Rotate for next round: keep first player, rotate the rest
             const lastPlayer = participants.pop();
-            participants.splice(1, 0, lastPlayer!);
+            if(lastPlayer) {
+               participants.splice(1, 0, lastPlayer);
+            }
         }
         
         const finalSchedule: ActiveSessionMatch[] = [];
@@ -1163,8 +1169,8 @@ function StartTournamentForm({
     }
     
     function handleStart() {
-        if (selectedPlayers.length < 3) {
-            alert('Bitte mindestens 3 Spieler für ein Turnier auswählen.');
+        if (selectedPlayers.length < 2) {
+            alert('Bitte mindestens 2 Spieler für ein Turnier auswählen.');
             return;
         }
 
@@ -1191,7 +1197,7 @@ function StartTournamentForm({
                     >
                         <option value={1}>Hinrunde</option>
                         <option value={2}>Hin- und Rückrunde</option>
-                        <option value={4}>Doppelte Hin- und Rückrunde</option>
+                        {selectedPlayers.length > 2 && <option value={4}>Doppelte Hin- und Rückrunde</option>}
                     </select>
                 </div>
 
@@ -1218,7 +1224,7 @@ function StartTournamentForm({
                 <div className="flex justify-end pt-2">
                     <button
                       onClick={handleStart}
-                      disabled={selectedPlayers.length < 3}
+                      disabled={selectedPlayers.length < 2}
                       className="px-6 py-3 rounded-xl text-white font-bold bg-[rgb(var(--accent))] disabled:bg-neutral-400 disabled:dark:bg-slate-600"
                     >
                         Turnier starten
@@ -1328,8 +1334,8 @@ function ActiveTournamentDisplay({
         const newMatches: Match[] = playedMatches.map(m => ({
             id: m.id, dateISO: now, mode: 'tournament', sessionId,
             teamAPlayers: m.teamA.players, teamBPlayers: m.teamB.players,
-            goalsA: m.goalsA!,
-            goalsB: m.goalsB!,
+            goalsA: m.goalsA as number,
+            goalsB: m.goalsB as number,
             teamAName: m.teamA.name, teamBName: m.teamB.name, enteredBy: 'Turnier'
         }));
 
