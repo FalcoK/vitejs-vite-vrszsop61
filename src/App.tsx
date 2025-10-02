@@ -947,9 +947,10 @@ function ActiveBestOfDisplay({
     const sessionId = uid();
     const now = new Date().toISOString();
 
-    const newMatches: Match[] = schedule.reduce((acc: Match[], m) => {
+    const newMatches: Match[] = [];
+    for (const m of schedule) {
       if (m.goalsA !== null && m.goalsB !== null) {
-        acc.push({
+        newMatches.push({
           id: uid(),
           dateISO: now,
           mode: activeSession.mode,
@@ -963,8 +964,7 @@ function ActiveBestOfDisplay({
           enteredBy: 'Session',
         });
       }
-      return acc;
-    }, []);
+    }
 
     const newKingSession: KingSession = {
       id: sessionId,
@@ -1334,9 +1334,10 @@ function ActiveTournamentDisplay({
         const sessionId = uid();
         const now = new Date().toISOString();
 
-        const newMatches: Match[] = schedule.reduce((acc: Match[], m) => {
+        const newMatches: Match[] = [];
+        for (const m of schedule) {
             if (m.goalsA !== null && m.goalsB !== null) {
-                acc.push({
+                newMatches.push({
                     id: m.id,
                     dateISO: now,
                     mode: 'tournament',
@@ -1350,9 +1351,7 @@ function ActiveTournamentDisplay({
                     enteredBy: 'Turnier',
                 });
             }
-            return acc;
-        }, []);
-
+        }
 
         const newKingSession: KingSession = {
             id: sessionId, dateISO: now, kings: finalWinner, kingEnteredBy: 'Turnier',
@@ -1896,4 +1895,3 @@ function SelectOrInput({
     </select>
   );
 }
-
