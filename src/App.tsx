@@ -190,16 +190,6 @@ function nameOf(players: Player[], id: string): string {
   return players.find((p) => p.id === id)?.name || '?';
 }
 
-function shuffle<T>(array: T[]): T[] {
-    let currentIndex = array.length, randomIndex;
-    while (currentIndex !== 0) {
-        randomIndex = Math.floor(Math.random() * currentIndex);
-        currentIndex--;
-        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
-    }
-    return array;
-}
-
 
 // ===================================================================================
 //  HOOK FÜR KÖNIGS-INFORMATIONEN
@@ -900,12 +890,10 @@ function StartBestOfForm({
 }
 
 function ActiveBestOfDisplay({
-  db,
   setDb,
   activeSession,
   setActiveSession,
 }: {
-  db: DB;
   setDb: React.Dispatch<React.SetStateAction<DB>>;
   activeSession: ActiveBestOfSession;
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
@@ -962,8 +950,9 @@ function ActiveBestOfDisplay({
     const sessionId = uid();
     const now = new Date().toISOString();
 
-    const newMatches: Match[] = schedule
-      .filter((m) => m.goalsA !== null && m.goalsB !== null)
+    const playedBestOfMatches = schedule.filter((m): m is ActiveSessionMatch & { goalsA: number; goalsB: number } => m.goalsA !== null && m.goalsB !== null);
+
+    const newMatches: Match[] = playedBestOfMatches
       .map((m) => ({
         id: uid(),
         dateISO: now,
@@ -971,8 +960,8 @@ function ActiveBestOfDisplay({
         sessionId,
         teamAPlayers: m.teamA.players,
         teamBPlayers: m.teamB.players,
-        goalsA: m.goalsA!,
-        goalsB: m.goalsB!,
+        goalsA: m.goalsA,
+        goalsB: m.goalsB,
         teamAName: m.teamA.name,
         teamBName: m.teamB.name,
         enteredBy: 'Session',
@@ -1245,19 +1234,17 @@ function StartTournamentForm({
 }
 
 function ActiveTournamentDisplay({
-  db,
   setDb,
   activeSession,
   setActiveSession,
 }: {
-  db: DB;
   setDb: React.Dispatch<React.SetStateAction<DB>>;
   activeSession: ActiveTournamentSession;
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
 }) {
     const [schedule, setSchedule] = useState<ActiveSessionMatch[]>(activeSession.schedule);
     
-    const playedMatches = useMemo(() => schedule.filter(m => m.goalsA !== null && m.goalsB !== null), [schedule]);
+    const playedMatches = useMemo(() => schedule.filter((m): m is ActiveSessionMatch & { goalsA: number; goalsB: number } => m.goalsA !== null && m.goalsB !== null), [schedule]);
     const allMatchesPlayed = playedMatches.length === schedule.length;
 
     const standings = useMemo(() => {
@@ -1345,7 +1332,7 @@ function ActiveTournamentDisplay({
         const newMatches: Match[] = playedMatches.map(m => ({
             id: m.id, dateISO: now, mode: 'tournament', sessionId,
             teamAPlayers: m.teamA.players, teamBPlayers: m.teamB.players,
-            goalsA: m.goalsA!, goalsB: m.goalsB!,
+            goalsA: m.goalsA, goalsB: m.goalsB,
             teamAName: m.teamA.name, teamBName: m.teamB.name, enteredBy: 'Turnier'
         }));
 
@@ -1364,14 +1351,14 @@ function ActiveTournamentDisplay({
         setActiveSession(null);
     }
     
-    const roundNames = {1: "Hinrunde", 2: "Hin- und Rückrunde", 4: "Doppelte Hin- und Rückrunde"};
+    const roundNames: {[key: number]: string} = {1: "Hinrunde", 2: "Hin- und Rückrunde", 4: "Doppelte Hin- und Rückrunde"};
 
     return (
       <div className="grid lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
           <h2 className="text-xl font-semibold mb-2">Laufendes Turnier: {roundNames[activeSession.rounds]}</h2>
           <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-            {schedule.map((match, i) => (
+            {schedule.map((match) => (
               <div key={match.id} className={cls("grid grid-cols-[1fr_auto_50px_20px_50px_auto_1fr] items-center gap-2 p-2 rounded-lg", match.isTiebreaker ? 'bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-400' : 'bg-neutral-50 dark:bg-slate-700')}>
                 <span className="text-right font-medium">{match.teamA.name}</span>
                 <img src={`https://api.dicebear.com/8.x/initials/svg?seed=${match.teamA.name}`} className="h-6 w-6 rounded-full" />
@@ -1598,7 +1585,7 @@ function History({
     );
   }, [db.matches, db.kingSessions]);
   
-  const roundNames = {1: "Hinrunde", 2: "Hin- & Rückrunde", 4: "Doppelte Hin- & Rückrunde"};
+  const roundNames: {[key: number]: string} = {1: "Hinrunde", 2: "Hin- & Rückrunde", 4: "Doppelte Hin- & Rückrunde"};
 
   return (
     <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
@@ -1645,7 +1632,7 @@ function History({
             if (s.mode === '2v2') {
                 sessionInfo = `2v2, Best of ${s.bestOf}`;
             } else if (s.mode === 'tournament') {
-                sessionInfo = `Turnier, ${s.tournamentParticipants} Spieler, ${roundNames[s.rounds] || 'unbekannt'}`;
+                sessionInfo = `Turnier, ${s.tournamentParticipants} Spieler, ${s.rounds ? roundNames[s.rounds] : 'unbekannt'}`;
             }
             
             return (
@@ -1891,4 +1878,5 @@ function SelectOrInput({
     </select>
   );
 }
+
 
