@@ -111,7 +111,7 @@ const KING_TITLES: { [key: number]: string } = {
   1: 'König',
   2: 'Zönig',
   3: 'Drönig',
-  4: 'Vönig',
+  4: 'Qönig',
   5: 'Fönig',
   6: 'Sönig',
   7: 'Septönig',
