@@ -947,21 +947,24 @@ function ActiveBestOfDisplay({
     const sessionId = uid();
     const now = new Date().toISOString();
 
-    const playedMatches = schedule.filter((m): m is ActiveSessionMatch & { goalsA: number, goalsB: number } => m.goalsA !== null && m.goalsB !== null);
-
-    const newMatches: Match[] = playedMatches.map((m) => ({
-        id: uid(),
-        dateISO: now,
-        mode: activeSession.mode,
-        sessionId,
-        teamAPlayers: m.teamA.players,
-        teamBPlayers: m.teamB.players,
-        goalsA: m.goalsA,
-        goalsB: m.goalsB,
-        teamAName: m.teamA.name,
-        teamBName: m.teamB.name,
-        enteredBy: 'Session',
-      }));
+    const newMatches: Match[] = schedule.reduce((acc: Match[], m) => {
+      if (m.goalsA !== null && m.goalsB !== null) {
+        acc.push({
+          id: uid(),
+          dateISO: now,
+          mode: activeSession.mode,
+          sessionId,
+          teamAPlayers: m.teamA.players,
+          teamBPlayers: m.teamB.players,
+          goalsA: m.goalsA,
+          goalsB: m.goalsB,
+          teamAName: m.teamA.name,
+          teamBName: m.teamB.name,
+          enteredBy: 'Session',
+        });
+      }
+      return acc;
+    }, []);
 
     const newKingSession: KingSession = {
       id: sessionId,
@@ -1331,13 +1334,25 @@ function ActiveTournamentDisplay({
         const sessionId = uid();
         const now = new Date().toISOString();
 
-        const newMatches: Match[] = playedMatches.map(m => ({
-            id: m.id, dateISO: now, mode: 'tournament', sessionId,
-            teamAPlayers: m.teamA.players, teamBPlayers: m.teamB.players,
-            goalsA: m.goalsA,
-            goalsB: m.goalsB,
-            teamAName: m.teamA.name, teamBName: m.teamB.name, enteredBy: 'Turnier'
-        }));
+        const newMatches: Match[] = schedule.reduce((acc: Match[], m) => {
+            if (m.goalsA !== null && m.goalsB !== null) {
+                acc.push({
+                    id: m.id,
+                    dateISO: now,
+                    mode: 'tournament',
+                    sessionId,
+                    teamAPlayers: m.teamA.players,
+                    teamBPlayers: m.teamB.players,
+                    goalsA: m.goalsA,
+                    goalsB: m.goalsB,
+                    teamAName: m.teamA.name,
+                    teamBName: m.teamB.name,
+                    enteredBy: 'Turnier',
+                });
+            }
+            return acc;
+        }, []);
+
 
         const newKingSession: KingSession = {
             id: sessionId, dateISO: now, kings: finalWinner, kingEnteredBy: 'Turnier',
