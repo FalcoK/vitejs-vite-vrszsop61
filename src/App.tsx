@@ -11,7 +11,7 @@ type Match = {
   dateISO: string;
   mode: Mode;
   teamAName: string;
-  teamBName: string;
+t ype teamBName: string;
   teamAPlayers: string[];
   teamBPlayers: string[];
   goalsA: number;
