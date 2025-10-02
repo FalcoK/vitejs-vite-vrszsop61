@@ -947,17 +947,17 @@ function ActiveBestOfDisplay({
     const sessionId = uid();
     const now = new Date().toISOString();
 
-    const newMatches: Match[] = schedule
-      .filter(m => m.goalsA !== null && m.goalsB !== null)
-      .map((m) => ({
+    const playedMatches = schedule.filter((m): m is ActiveSessionMatch & { goalsA: number, goalsB: number } => m.goalsA !== null && m.goalsB !== null);
+
+    const newMatches: Match[] = playedMatches.map((m) => ({
         id: uid(),
         dateISO: now,
         mode: activeSession.mode,
         sessionId,
         teamAPlayers: m.teamA.players,
         teamBPlayers: m.teamB.players,
-        goalsA: m.goalsA as number,
-        goalsB: m.goalsB as number,
+        goalsA: m.goalsA,
+        goalsB: m.goalsB,
         teamAName: m.teamA.name,
         teamBName: m.teamB.name,
         enteredBy: 'Session',
@@ -1334,8 +1334,8 @@ function ActiveTournamentDisplay({
         const newMatches: Match[] = playedMatches.map(m => ({
             id: m.id, dateISO: now, mode: 'tournament', sessionId,
             teamAPlayers: m.teamA.players, teamBPlayers: m.teamB.players,
-            goalsA: m.goalsA as number,
-            goalsB: m.goalsB as number,
+            goalsA: m.goalsA,
+            goalsB: m.goalsB,
             teamAName: m.teamA.name, teamBName: m.teamB.name, enteredBy: 'Turnier'
         }));
 
