@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 //  TYPES
 // ===================================================================================
 type Player = { id: string; name: string };
-type Mode = '1v1' | '2v2';
+type Mode = '2v2' | 'tournament';
 
 type Match = {
   id: string;
@@ -24,8 +24,10 @@ type KingSession = {
   id: string;
   dateISO: string;
   kings: string[];
-  bestOf: number;
   mode: Mode;
+  bestOf?: number; // For 2v2
+  rounds?: number; // For tournament
+  tournamentParticipants?: number; // For tournament
   kingEnteredBy?: string;
 };
 
@@ -58,14 +60,27 @@ type ActiveSessionMatch = {
   teamB: SessionTeam;
   goalsA: number | null;
   goalsB: number | null;
+  isTiebreaker?: boolean;
 };
 
-type ActiveSession = {
+type ActiveBestOfSession = {
+  type: '2v2';
   teams: SessionTeam[];
   schedule: ActiveSessionMatch[];
   bestOf: number;
-  mode: Mode;
+  mode: '2v2';
 };
+
+type ActiveTournamentSession = {
+  type: 'tournament';
+  players: Player[];
+  schedule: ActiveSessionMatch[];
+  rounds: number;
+  mode: 'tournament';
+};
+
+type ActiveSession = ActiveBestOfSession | ActiveTournamentSession;
+
 
 type DB = {
   theme: ThemeKey;
@@ -80,7 +95,7 @@ type ThemeKey = 'FCB' | 'BVB' | 'FALCO';
 // ===================================================================================
 //  KONSTANTEN & UTILS
 // ===================================================================================
-const STORAGE_KEY = 'fifa-king-tracker-v4';
+const STORAGE_KEY = 'fifa-king-tracker-v5';
 
 const VIOLATION_TYPES: Record<ViolationType, string> = {
   unerlaubt_pausiert: 'Unerlaubt pausiert/resumed',
@@ -136,10 +151,10 @@ const THEMES: Record<
     wmOpacity: 0.15,
   },
   FALCO: {
-    name: 'Falco',
+    name: '13X König Falco',
     classes:
       '[--bg:245,252,245] [--paper:255,255,255] [--text:5,46,22] [--accent:16,185,129] [--accent2:21,128,61] [--muted:71,85,105]',
-    wmText: 'FALCO',
+    wmText: '13X KÖNIG FALCO',
     wmImage:
       'https://upload.wikimedia.org/wikipedia/commons/thumb/b/bd/Beard_icon.svg/512px-Beard_icon.svg.png',
     wmOpacity: 0.18,
@@ -174,6 +189,17 @@ function uid(): string {
 function nameOf(players: Player[], id: string): string {
   return players.find((p) => p.id === id)?.name || '?';
 }
+
+function shuffle<T>(array: T[]): T[] {
+    let currentIndex = array.length, randomIndex;
+    while (currentIndex !== 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+}
+
 
 // ===================================================================================
 //  HOOK FÜR KÖNIGS-INFORMATIONEN
@@ -230,7 +256,7 @@ function useKingInfo(db: DB): KingInfo {
 // ===================================================================================
 export default function App() {
   const [db, setDb] = useLocalState<DB>({
-    theme: 'FALCO',
+    theme: 'BVB',
     players: [
       { id: uid(), name: 'Falco' },
       { id: uid(), name: 'Marcus' },
@@ -267,7 +293,7 @@ export default function App() {
   return (
     <div
       className={cls(
-        'min-h-screen flex flex-col bg-[rgb(var(--bg))] text-[rgb(var(--text))] overflow-x-hidden',
+        'min-h-screen flex flex-col bg-[rgb(var(--bg))] text-[rgb(var(--text))] overflow-x-hidden dark:bg-slate-900 dark:text-slate-200',
         themeClass
       )}
       style={{
@@ -276,7 +302,7 @@ export default function App() {
         ...bannerVars,
       }}
     >
-      <div className="sticky top-0 z-20 bg-[rgb(var(--bg))]/90 backdrop-blur supports-[backdrop-filter]:bg-[rgb(var(--bg))]/70 border-b border-neutral-200">
+      <div className="sticky top-0 z-20 bg-[rgb(var(--bg))]/90 backdrop-blur supports-[backdrop-filter]:bg-[rgb(var(--bg))]/70 dark:bg-slate-900/80 border-b border-neutral-200 dark:border-slate-700">
         <div className="w-full p-4 sm:p-6">
           <Header tab={tab} setTab={setTab} kingInfo={kingInfo} />
           <BrandStrip text={theme?.wmText} />
@@ -348,8 +374,7 @@ function Header({
           ] as const
         ).map(([k, label]) => (
           <TabButton key={k} active={tab === k} onClick={() => setTab(k)}>
-            {' '}
-            {label}{' '}
+            {label}
           </TabButton>
         ))}
       </nav>
@@ -368,20 +393,20 @@ function TabButton({
         'px-3 py-2 rounded-xl text-sm border transition-colors',
         active
           ? 'bg-[rgb(var(--accent))] border-[rgb(var(--accent))] text-white shadow'
-          : 'bg-[rgb(var(--paper))] border-neutral-200 hover:bg-neutral-50'
+          : 'bg-[rgb(var(--paper))] border-neutral-200 hover:bg-neutral-50 dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700'
       )}
       {...props}
     >
-      {' '}
-      {children}{' '}
+      {children}
     </button>
   );
 }
+
 function BrandStrip({ text }: { text?: string }) {
   return (
     <div className="mt-3 w-full">
       <div
-        className="h-28 sm:h-32 flex items-center justify-center relative overflow-hidden"
+        className="h-28 sm:h-32 flex items-center justify-center relative overflow-hidden rounded-xl"
         style={{
           background:
             'linear-gradient(90deg, rgba(var(--accent),0.98), rgba(var(--accent2),0.98))',
@@ -463,7 +488,7 @@ function Standings({ db, kingInfo }: { db: DB; kingInfo: KingInfo }) {
     return Array.from(map.values());
   }, [db.players, db.kingSessions]);
   return (
-    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
       <h2 className="text-xl font-semibold mb-3">Gesamttabellen</h2>
       <div className="grid md:grid-cols-2 gap-6">
         <div>
@@ -471,11 +496,11 @@ function Standings({ db, kingInfo }: { db: DB; kingInfo: KingInfo }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm border-collapse">
               <thead>
-                <tr className="text-left border-b">
+                <tr className="text-left border-b dark:border-slate-600">
                   {['#', 'Spieler', 'Titel'].map((h) => (
                     <th
                       key={h}
-                      className="py-2 pr-3 font-medium text-[rgb(var(--muted))]"
+                      className="py-2 pr-3 font-medium text-[rgb(var(--muted))] dark:text-slate-400"
                     >
                       {h}
                     </th>
@@ -488,7 +513,7 @@ function Standings({ db, kingInfo }: { db: DB; kingInfo: KingInfo }) {
                     (a, b) => b.wins - a.wins || a.name.localeCompare(b.name)
                   )
                   .map((r, i) => (
-                    <tr key={r.id} className="border-b last:border-0">
+                    <tr key={r.id} className="border-b last:border-0 dark:border-slate-700">
                       <td className="py-2 pr-3">{i + 1}</td>
                       <td className="py-2 pr-3 font-semibold">
                         <PlayerNameDisplay
@@ -525,12 +550,12 @@ function TableStats({
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
-          <tr className="text-left border-b">
+          <tr className="text-left border-b dark:border-slate-600">
             {['#', 'Spieler', 'Pkte', '+/−', 'Sp', 'S', 'U', 'N', 'Tore'].map(
               (h) => (
                 <th
                   key={h}
-                  className="py-2 pr-3 font-medium text-[rgb(var(--muted))]"
+                  className="py-2 pr-3 font-medium text-[rgb(var(--muted))] dark:text-slate-400"
                 >
                   {h}
                 </th>
@@ -548,7 +573,7 @@ function TableStats({
                 a.name.localeCompare(b.name)
             )
             .map((p, i) => (
-              <tr key={p.id} className="border-b last:border-0">
+              <tr key={p.id} className="border-b last:border-0 dark:border-slate-700">
                 <td className="py-2 pr-3">{i + 1}</td>
                 <td className="py-2 pr-3 font-semibold">
                   <PlayerNameDisplay
@@ -575,6 +600,7 @@ function TableStats({
     </div>
   );
 }
+
 function computeStandings(players: Player[], matches: Match[]) {
   const map = new Map<
     string,
@@ -604,6 +630,7 @@ function computeStandings(players: Player[], matches: Match[]) {
     ])
   );
   for (const m of matches) {
+    if (m.goalsA === null || m.goalsB === null) continue;
     const aWon = m.goalsA > m.goalsB;
     const bWon = m.goalsB > m.goalsA;
     for (const pid of m.teamAPlayers) {
@@ -635,7 +662,7 @@ function computeStandings(players: Player[], matches: Match[]) {
 }
 
 // ===================================================================================
-//  TAB: SESSION MANAGER (MIT "BEST OF"-LOGIK)
+//  TAB: SESSION MANAGER
 // ===================================================================================
 function SessionManager({
   db,
@@ -649,26 +676,65 @@ function SessionManager({
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
 }) {
   if (activeSession) {
-    return (
-      <ActiveSessionDisplay
-        db={db}
-        setDb={setDb}
-        activeSession={activeSession}
-        setActiveSession={setActiveSession}
-      />
-    );
+    if (activeSession.type === '2v2') {
+        return (
+          <ActiveBestOfDisplay
+            db={db}
+            setDb={setDb}
+            activeSession={activeSession}
+            setActiveSession={setActiveSession}
+          />
+        );
+    }
+     if (activeSession.type === 'tournament') {
+        return (
+          <ActiveTournamentDisplay
+            db={db}
+            setDb={setDb}
+            activeSession={activeSession}
+            setActiveSession={setActiveSession}
+          />
+        );
+    }
   }
-  return <StartSessionForm db={db} setActiveSession={setActiveSession} />;
+
+  return <StartSessionChooser db={db} setActiveSession={setActiveSession} />;
 }
 
-function StartSessionForm({
+function StartSessionChooser({
+    db,
+    setActiveSession,
+}: {
+    db: DB;
+    setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
+}) {
+    const [sessionType, setSessionType] = useState<'2v2' | 'tournament'>('tournament');
+
+    return (
+        <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 max-w-4xl mx-auto dark:bg-slate-800 dark:border-slate-700">
+            <div className="flex justify-center mb-4 border-b pb-4 dark:border-slate-600">
+                 <div className="flex items-center gap-2">
+                    <TabButton active={sessionType === 'tournament'} onClick={() => setSessionType('tournament')}>
+                      Einzelsession (Turnier)
+                    </TabButton>
+                    <TabButton active={sessionType === '2v2'} onClick={() => setSessionType('2v2')}>
+                      2 vs 2 (Best Of)
+                    </TabButton>
+                </div>
+            </div>
+            {sessionType === '2v2' && <StartBestOfForm db={db} setActiveSession={setActiveSession} />}
+            {sessionType === 'tournament' && <StartTournamentForm db={db} setActiveSession={setActiveSession} />}
+        </div>
+    );
+}
+
+function StartBestOfForm({
   db,
   setActiveSession,
 }: {
   db: DB;
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
 }) {
-  const [mode, setMode] = useState<Mode>('1v1');
   const [bestOf, setBestOf] = useState<number>(3);
   const [sessionTeams, setSessionTeams] = useState<SessionTeam[]>([]);
   const [teamName, setTeamName] = useState('');
@@ -677,19 +743,18 @@ function StartSessionForm({
   const availablePlayers = db.players.filter(
     (p) => !sessionTeams.flatMap((t) => t.players).includes(p.id)
   );
-  const playersPerTeam = mode === '1v1' ? 1 : 2;
-
+  
   function toggleTeamPlayer(id: string) {
     setTeamPlayers((current) => {
       if (current.includes(id)) return current.filter((pId) => pId !== id);
-      if (current.length >= playersPerTeam) return current;
+      if (current.length >= 2) return current;
       return [...current, id];
     });
   }
 
   function addTeam() {
-    if (teamPlayers.length !== playersPerTeam) {
-      alert(`Bitte genau ${playersPerTeam} Spieler für das Team auswählen.`);
+    if (teamPlayers.length !== 2) {
+      alert(`Bitte genau 2 Spieler für das Team auswählen.`);
       return;
     }
     const finalTeamName =
@@ -718,42 +783,21 @@ function StartSessionForm({
         goalsB: null,
       })
     );
-    setActiveSession({ teams: sessionTeams, schedule, bestOf, mode });
+    setActiveSession({ type: '2v2', teams: sessionTeams, schedule, bestOf, mode: '2v2' });
   }
 
   return (
-    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 max-w-4xl mx-auto">
-      <h2 className="text-xl font-semibold mb-3">Neue Session starten</h2>
-      <div className="border-b pb-4 mb-4">
+    <div>
+      <h2 className="text-xl font-semibold mb-3 text-center">Neue 2v2 Best-Of-Session</h2>
+      <div className="border-b pb-4 mb-4 dark:border-slate-600">
         <h3 className="font-semibold mb-2">1. Session-Einstellungen</h3>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">Modus:</span>
-            <TabButton
-              active={mode === '1v1'}
-              onClick={() => {
-                setMode('1v1');
-                setTeamPlayers([]);
-              }}
-            >
-              1 vs 1
-            </TabButton>
-            <TabButton
-              active={mode === '2v2'}
-              onClick={() => {
-                setMode('2v2');
-                setTeamPlayers([]);
-              }}
-            >
-              2 vs 2
-            </TabButton>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
+           <label className="flex items-center gap-2 text-sm">
             <span className="font-medium">Best of:</span>
             <select
               value={bestOf}
               onChange={(e) => setBestOf(Number(e.target.value))}
-              className="px-3 py-2 rounded-xl border border-neutral-300"
+              className="px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
             >
               <option value={3}>3</option>
               <option value={5}>5</option>
@@ -763,22 +807,21 @@ function StartSessionForm({
           </label>
         </div>
       </div>
-      <div className="grid md:grid-cols-2 gap-6 border-b pb-4 mb-4">
+      <div className="grid md:grid-cols-2 gap-6 border-b pb-4 mb-4 dark:border-slate-600">
         <div>
           <h3 className="font-semibold mb-2">
             2. Teams erstellen (genau 2 benötigt)
           </h3>
-          <div className="p-3 bg-neutral-50 rounded-lg space-y-3">
+          <div className="p-3 bg-neutral-50 rounded-lg space-y-3 dark:bg-slate-700">
             <input
               type="text"
               placeholder="Teamname (optional)"
               value={teamName}
               onChange={(e) => setTeamName(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm"
+              className="w-full px-3 py-2 rounded-xl border border-neutral-300 text-sm dark:bg-slate-600 dark:border-slate-500"
             />
             <div className="text-sm">
-              Spieler wählen ({playersPerTeam - teamPlayers.length} /{' '}
-              {playersPerTeam}):
+              Spieler wählen ({2 - teamPlayers.length} / 2):
             </div>
             <div className="flex flex-wrap gap-1">
               {availablePlayers.map((p) => (
@@ -789,7 +832,7 @@ function StartSessionForm({
                     'px-2 py-1 rounded-lg border text-xs',
                     teamPlayers.includes(p.id)
                       ? 'bg-[rgb(var(--accent))] border-[rgb(var(--accent))] text-white'
-                      : 'bg-white border-neutral-300 hover:bg-neutral-50'
+                      : 'bg-white border-neutral-300 hover:bg-neutral-50 dark:bg-slate-600 dark:border-slate-500 dark:hover:bg-slate-500'
                   )}
                 >
                   {p.name}
@@ -799,10 +842,10 @@ function StartSessionForm({
             <button
               onClick={addTeam}
               disabled={
-                teamPlayers.length !== playersPerTeam ||
+                teamPlayers.length !== 2 ||
                 sessionTeams.length >= 2
               }
-              className="w-full px-4 py-2 rounded-xl text-white bg-[rgb(var(--accent2))] disabled:bg-neutral-300 text-sm"
+              className="w-full px-4 py-2 rounded-xl text-white bg-[rgb(var(--accent2))] disabled:bg-neutral-400 disabled:dark:bg-slate-600 text-sm"
             >
               Team hinzufügen
             </button>
@@ -813,7 +856,7 @@ function StartSessionForm({
             Teilnehmende Teams ({sessionTeams.length}/2)
           </h3>
           {sessionTeams.length === 0 && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-slate-400">
               Noch keine Teams hinzugefügt.
             </p>
           )}
@@ -821,7 +864,7 @@ function StartSessionForm({
             {sessionTeams.map((team, i) => (
               <li
                 key={team.id}
-                className="text-sm flex justify-between items-center p-2 rounded bg-white border"
+                className="text-sm flex justify-between items-center p-2 rounded bg-white border dark:bg-slate-700 dark:border-slate-600"
               >
                 <span>
                   {i + 1}. <b>{team.name}</b> (
@@ -847,7 +890,7 @@ function StartSessionForm({
         <button
           onClick={handleStart}
           disabled={sessionTeams.length !== 2}
-          className="px-6 py-3 rounded-xl text-white font-bold bg-[rgb(var(--accent))] disabled:bg-neutral-300"
+          className="px-6 py-3 rounded-xl text-white font-bold bg-[rgb(var(--accent))] disabled:bg-neutral-400 disabled:dark:bg-slate-600"
         >
           Session starten
         </button>
@@ -856,17 +899,17 @@ function StartSessionForm({
   );
 }
 
-function ActiveSessionDisplay({
+function ActiveBestOfDisplay({
+  db,
   setDb,
   activeSession,
   setActiveSession,
 }: {
-  db: DB; // Prop existiert, wird hier nur nicht ausgelesen
+  db: DB;
   setDb: React.Dispatch<React.SetStateAction<DB>>;
-  activeSession: ActiveSession;
+  activeSession: ActiveBestOfSession;
   setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
 }) {
-
   const [schedule, setSchedule] = useState(activeSession.schedule);
 
   const winsNeeded = Math.ceil(activeSession.bestOf / 2);
@@ -886,6 +929,7 @@ function ActiveSessionDisplay({
       current.map((match) => {
         if (match.id === matchId) {
           const score = value === '' ? null : parseInt(value, 10);
+          if (isNaN(score)) return match;
           return { ...match, [team === 'A' ? 'goalsA' : 'goalsB']: score };
         }
         return match;
@@ -893,8 +937,8 @@ function ActiveSessionDisplay({
     );
   }
 
-  function finishSession(isConfirmed = false) {
-    if (
+  const finishSession = (isConfirmed = false) => {
+     if (
       !isConfirmed &&
       scores.teamAWins < winsNeeded &&
       scores.teamBWins < winsNeeded
@@ -955,18 +999,18 @@ function ActiveSessionDisplay({
     setActiveSession(null);
   }
 
-  // Auto-finish session when a winner is determined
   useEffect(() => {
     if (scores.teamAWins >= winsNeeded || scores.teamBWins >= winsNeeded) {
-      finishSession(true); // isConfirmed = true to bypass the confirmation dialog
+        // Use a timeout to allow state to update and avoid confirm dialogs blocking UI
+        setTimeout(() => finishSession(true), 100);
     }
   }, [scores, winsNeeded]);
 
   return (
     <div className="grid lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+      <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
         <h2 className="text-xl font-semibold mb-1">
-          Laufende Session: Best of {activeSession.bestOf}
+          Laufende 2v2 Session: Best of {activeSession.bestOf}
         </h2>
         <h3 className="text-2xl font-bold text-center mb-4">
           {activeSession.teams[0].name}{' '}
@@ -979,7 +1023,7 @@ function ActiveSessionDisplay({
           {schedule.map((match, i) => (
             <div
               key={match.id}
-              className="grid grid-cols-[1fr,50px,20px,50px,1fr] items-center gap-2 p-2 bg-neutral-50 rounded-lg"
+              className="grid grid-cols-[1fr,50px,20px,50px,1fr] items-center gap-2 p-2 bg-neutral-50 rounded-lg dark:bg-slate-700"
             >
               <span className="text-right font-bold">Spiel {i + 1}</span>
               <input
@@ -987,7 +1031,7 @@ function ActiveSessionDisplay({
                 min="0"
                 value={match.goalsA ?? ''}
                 onChange={(e) => updateScore(match.id, 'A', e.target.value)}
-                className="w-full text-center p-1 rounded-md border border-neutral-300"
+                className="w-full text-center p-1 rounded-md border border-neutral-300 dark:bg-slate-600 dark:border-slate-500"
               />
               <span className="text-center">:</span>
               <input
@@ -995,9 +1039,9 @@ function ActiveSessionDisplay({
                 min="0"
                 value={match.goalsB ?? ''}
                 onChange={(e) => updateScore(match.id, 'B', e.target.value)}
-                className="w-full text-center p-1 rounded-md border border-neutral-300"
+                className="w-full text-center p-1 rounded-md border border-neutral-300 dark:bg-slate-600 dark:border-slate-500"
               />
-              <span className="font-bold"></span>
+              <span></span>
             </div>
           ))}
         </div>
@@ -1007,7 +1051,7 @@ function ActiveSessionDisplay({
               if (window.confirm('Session wirklich abbrechen?'))
                 setActiveSession(null);
             }}
-            className="px-4 py-2 rounded-xl bg-neutral-200 text-sm"
+            className="px-4 py-2 rounded-xl bg-neutral-200 text-sm dark:bg-slate-600 dark:text-slate-100"
           >
             Abbrechen
           </button>
@@ -1019,7 +1063,7 @@ function ActiveSessionDisplay({
           </button>
         </div>
       </div>
-      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 self-start">
+      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 self-start dark:bg-slate-800 dark:border-slate-700">
         <h3 className="text-lg font-semibold mb-3">Session Info</h3>
         <p>
           <b>Modus:</b> {activeSession.mode}
@@ -1039,6 +1083,340 @@ function ActiveSessionDisplay({
     </div>
   );
 }
+
+function StartTournamentForm({
+  db,
+  setActiveSession,
+}: {
+  db: DB;
+  setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
+}) {
+    const [selectedPlayers, setSelectedPlayers] = useState<Player[]>([]);
+    const [rounds, setRounds] = useState<number>(1);
+
+    function togglePlayer(player: Player) {
+        setSelectedPlayers(current => 
+            current.some(p => p.id === player.id)
+                ? current.filter(p => p.id !== player.id)
+                : [...current, player]
+        );
+    }
+
+    function generateSchedule(players: Player[], numRounds: number): ActiveSessionMatch[] {
+        let participants = [...players];
+        const isOdd = participants.length % 2 !== 0;
+        if (isOdd) {
+            // Add a dummy player for bye rounds
+            participants.push({ id: 'bye', name: 'BYE' });
+        }
+
+        const playerCount = participants.length;
+        const numRoundsForRR = playerCount - 1;
+
+        const allHinrundeMatches: ActiveSessionMatch[][] = [];
+
+        // Generate one full Round Robin set of rounds (Hinrunde)
+        for (let r = 0; r < numRoundsForRR; r++) {
+            const roundMatches: ActiveSessionMatch[] = [];
+            for (let i = 0; i < playerCount / 2; i++) {
+                const p1 = participants[i];
+                const p2 = participants[playerCount - 1 - i];
+
+                if (p1.id !== 'bye' && p2.id !== 'bye') {
+                     roundMatches.push({
+                        id: uid(),
+                        teamA: { id: p1.id, name: p1.name, players: [p1.id] },
+                        teamB: { id: p2.id, name: p2.name, players: [p2.id] },
+                        goalsA: null,
+                        goalsB: null,
+                    });
+                }
+            }
+            allHinrundeMatches.push(roundMatches);
+
+            // Rotate for next round: keep first player, rotate the rest
+            const lastPlayer = participants.pop();
+            participants.splice(1, 0, lastPlayer!);
+        }
+        
+        const finalSchedule: ActiveSessionMatch[] = [];
+
+        // Add Hinrunde matches
+        finalSchedule.push(...allHinrundeMatches.flat());
+
+        // Add Rückrunde matches if selected
+        if (numRounds >= 2) {
+            const rueckrundeMatches = allHinrundeMatches.map(round =>
+                round.map(match => ({
+                    ...match,
+                    id: uid(),
+                    teamA: match.teamB, // Swap teams for return leg
+                    teamB: match.teamA,
+                }))
+            );
+            finalSchedule.push(...rueckrundeMatches.flat());
+        }
+
+        // Add double matches if selected
+        if (numRounds >= 4) {
+             const extraHinrundeMatches = allHinrundeMatches.map(round =>
+                round.map(match => ({...match, id: uid() }))
+            );
+             const extraRueckrundeMatches = allHinrundeMatches.map(round =>
+                round.map(match => ({
+                    ...match,
+                    id: uid(),
+                    teamA: match.teamB,
+                    teamB: match.teamA,
+                }))
+            );
+            finalSchedule.push(...extraHinrundeMatches.flat());
+            finalSchedule.push(...extraRueckrundeMatches.flat());
+        }
+
+        return finalSchedule;
+    }
+    
+    function handleStart() {
+        if (selectedPlayers.length < 3) {
+            alert('Bitte mindestens 3 Spieler für ein Turnier auswählen.');
+            return;
+        }
+
+        const schedule = generateSchedule(selectedPlayers, rounds);
+        setActiveSession({
+            type: 'tournament',
+            players: selectedPlayers,
+            schedule,
+            rounds,
+            mode: 'tournament',
+        });
+    }
+
+    return (
+        <div>
+            <h2 className="text-xl font-semibold mb-3 text-center">Neue Einzelsession (Turnier)</h2>
+            <div className="space-y-4">
+                <div>
+                    <h3 className="font-semibold mb-2">1. Runden</h3>
+                    <select
+                        value={rounds}
+                        onChange={e => setRounds(Number(e.target.value))}
+                        className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
+                    >
+                        <option value={1}>Hinrunde</option>
+                        <option value={2}>Hin- und Rückrunde</option>
+                        <option value={4}>Doppelte Hin- und Rückrunde</option>
+                    </select>
+                </div>
+
+                <div>
+                    <h3 className="font-semibold mb-2">2. Spieler auswählen ({selectedPlayers.length})</h3>
+                    <div className="flex flex-wrap gap-2 p-3 bg-neutral-50 rounded-lg dark:bg-slate-700">
+                        {db.players.map(player => (
+                            <button
+                                key={player.id}
+                                onClick={() => togglePlayer(player)}
+                                className={cls(
+                                    'px-3 py-1.5 rounded-lg border text-sm',
+                                    selectedPlayers.some(p => p.id === player.id)
+                                        ? 'bg-[rgb(var(--accent))] border-[rgb(var(--accent))] text-white'
+                                        : 'bg-white border-neutral-300 hover:bg-neutral-50 dark:bg-slate-600 dark:border-slate-500 dark:hover:bg-slate-500'
+                                )}
+                            >
+                                {player.name}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                
+                <div className="flex justify-end pt-2">
+                    <button
+                      onClick={handleStart}
+                      disabled={selectedPlayers.length < 3}
+                      className="px-6 py-3 rounded-xl text-white font-bold bg-[rgb(var(--accent))] disabled:bg-neutral-400 disabled:dark:bg-slate-600"
+                    >
+                        Turnier starten
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function ActiveTournamentDisplay({
+  db,
+  setDb,
+  activeSession,
+  setActiveSession,
+}: {
+  db: DB;
+  setDb: React.Dispatch<React.SetStateAction<DB>>;
+  activeSession: ActiveTournamentSession;
+  setActiveSession: React.Dispatch<React.SetStateAction<ActiveSession | null>>;
+}) {
+    const [schedule, setSchedule] = useState<ActiveSessionMatch[]>(activeSession.schedule);
+    
+    const playedMatches = useMemo(() => schedule.filter(m => m.goalsA !== null && m.goalsB !== null), [schedule]);
+    const allMatchesPlayed = playedMatches.length === schedule.length;
+
+    const standings = useMemo(() => {
+        const playerStats = new Map(activeSession.players.map(p => [p.id, {
+            id: p.id, name: p.name, played: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, points: 0, goalDiff: 0
+        }]));
+
+        for (const match of playedMatches) {
+            const statsA = playerStats.get(match.teamA.id)!;
+            const statsB = playerStats.get(match.teamB.id)!;
+
+            statsA.played++;
+            statsB.played++;
+            statsA.goalsFor += match.goalsA!;
+            statsA.goalsAgainst += match.goalsB!;
+            statsB.goalsFor += match.goalsB!;
+            statsB.goalsAgainst += match.goalsA!;
+
+            if (match.goalsA! > match.goalsB!) {
+                statsA.wins++;
+                statsB.losses++;
+                statsA.points += 3;
+            } else if (match.goalsB! > match.goalsA!) {
+                statsB.wins++;
+                statsA.losses++;
+                statsB.points += 3;
+            } else {
+                statsA.draws++;
+                statsB.draws++;
+                statsA.points += 1;
+                statsB.points += 1;
+            }
+        }
+        
+        return Array.from(playerStats.values()).map(s => ({...s, goalDiff: s.goalsFor - s.goalsAgainst})).sort(
+            (a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goalsFor - a.goalsFor || a.name.localeCompare(b.name)
+        );
+    }, [activeSession.players, playedMatches]);
+
+    const tiebreakerInfo = useMemo(() => {
+        if (!allMatchesPlayed || schedule.some(m => m.isTiebreaker)) return null;
+
+        if (standings.length >= 2) {
+            const p1 = standings[0];
+            const p2 = standings[1];
+            if (p1.points === p2.points && p1.goalDiff === p2.goalDiff && p1.goalsFor === p2.goalsFor) {
+                return {p1, p2};
+            }
+        }
+        return null;
+    }, [allMatchesPlayed, standings, schedule]);
+
+    useEffect(() => {
+        if (tiebreakerInfo) {
+            const tiebreakerMatch: ActiveSessionMatch = {
+                id: uid(),
+                teamA: { id: tiebreakerInfo.p1.id, name: tiebreakerInfo.p1.name, players: [tiebreakerInfo.p1.id] },
+                teamB: { id: tiebreakerInfo.p2.id, name: tiebreakerInfo.p2.name, players: [tiebreakerInfo.p2.id] },
+                goalsA: null, goalsB: null, isTiebreaker: true
+            };
+            setSchedule(s => [...s, tiebreakerMatch]);
+        }
+    }, [tiebreakerInfo]);
+
+    function updateScore(matchId: string, team: 'A' | 'B', value: string) {
+        setSchedule(current => current.map(match => {
+            if (match.id === matchId) {
+                const score = value === '' ? null : parseInt(value, 10);
+                if (isNaN(score)) return match;
+                return { ...match, [team === 'A' ? 'goalsA' : 'goalsB']: score };
+            }
+            return match;
+        }));
+    }
+
+    function finishSession() {
+        if (!allMatchesPlayed) {
+            if (!window.confirm("Nicht alle Spiele sind beendet. Trotzdem speichern?")) return;
+        }
+
+        const finalWinner = standings.length > 0 ? [standings[0].id] : [];
+        const sessionId = uid();
+        const now = new Date().toISOString();
+
+        const newMatches: Match[] = playedMatches.map(m => ({
+            id: m.id, dateISO: now, mode: 'tournament', sessionId,
+            teamAPlayers: m.teamA.players, teamBPlayers: m.teamB.players,
+            goalsA: m.goalsA!, goalsB: m.goalsB!,
+            teamAName: m.teamA.name, teamBName: m.teamB.name, enteredBy: 'Turnier'
+        }));
+
+        const newKingSession: KingSession = {
+            id: sessionId, dateISO: now, kings: finalWinner, kingEnteredBy: 'Turnier',
+            mode: 'tournament', rounds: activeSession.rounds, tournamentParticipants: activeSession.players.length
+        };
+        
+        setDb(prev => ({
+            ...prev,
+            matches: [...prev.matches, ...newMatches],
+            kingSessions: [...prev.kingSessions, newKingSession]
+        }));
+
+        alert(`Turnier beendet! Der Sieger ist ${standings[0]?.name || 'unbekannt'}. Alles wurde gespeichert.`);
+        setActiveSession(null);
+    }
+    
+    const roundNames = {1: "Hinrunde", 2: "Hin- und Rückrunde", 4: "Doppelte Hin- und Rückrunde"};
+
+    return (
+      <div className="grid lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <h2 className="text-xl font-semibold mb-2">Laufendes Turnier: {roundNames[activeSession.rounds]}</h2>
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
+            {schedule.map((match, i) => (
+              <div key={match.id} className={cls("grid grid-cols-[1fr_auto_50px_20px_50px_auto_1fr] items-center gap-2 p-2 rounded-lg", match.isTiebreaker ? 'bg-amber-100 dark:bg-amber-900/50 border-2 border-amber-400' : 'bg-neutral-50 dark:bg-slate-700')}>
+                <span className="text-right font-medium">{match.teamA.name}</span>
+                <img src={`https://api.dicebear.com/8.x/initials/svg?seed=${match.teamA.name}`} className="h-6 w-6 rounded-full" />
+                <input type="number" min="0" value={match.goalsA ?? ''} onChange={(e) => updateScore(match.id, 'A', e.target.value)} className="w-full text-center p-1 rounded-md border border-neutral-300 dark:bg-slate-600 dark:border-slate-500" />
+                <span className="text-center font-bold text-gray-400 dark:text-slate-400">:</span>
+                <input type="number" min="0" value={match.goalsB ?? ''} onChange={(e) => updateScore(match.id, 'B', e.target.value)} className="w-full text-center p-1 rounded-md border border-neutral-300 dark:bg-slate-600 dark:border-slate-500" />
+                 <img src={`https://api.dicebear.com/8.x/initials/svg?seed=${match.teamB.name}`} className="h-6 w-6 rounded-full" />
+                <span className="text-left font-medium">{match.teamB.name}</span>
+              </div>
+            ))}
+          </div>
+           <div className="flex justify-between items-center mt-4">
+              <button onClick={() => { if(window.confirm('Turnier wirklich abbrechen?')) setActiveSession(null) }} className="px-4 py-2 rounded-xl bg-neutral-200 text-sm dark:bg-slate-600 dark:text-slate-100">Abbrechen</button>
+              <button onClick={finishSession} disabled={!allMatchesPlayed || !!tiebreakerInfo} className="px-4 py-2 rounded-xl text-white bg-[rgb(var(--accent))] disabled:bg-neutral-400 disabled:dark:bg-slate-600">Turnier beenden & speichern</button>
+            </div>
+        </div>
+        <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 self-start dark:bg-slate-800 dark:border-slate-700">
+            <h3 className="text-lg font-semibold mb-3">Live-Tabelle</h3>
+            <table className="w-full text-sm">
+                <thead>
+                    <tr className="text-left border-b dark:border-slate-600">
+                        <th className="p-1 font-medium text-[rgb(var(--muted))] dark:text-slate-400">#</th>
+                        <th className="p-1 font-medium text-[rgb(var(--muted))] dark:text-slate-400">Spieler</th>
+                        <th className="p-1 font-medium text-[rgb(var(--muted))] dark:text-slate-400">P</th>
+                        <th className="p-1 font-medium text-[rgb(var(--muted))] dark:text-slate-400">Diff</th>
+                        <th className="p-1 font-medium text-[rgb(var(--muted))] dark:text-slate-400">Tore</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {standings.map((p, i) => (
+                        <tr key={p.id} className="border-b last:border-0 dark:border-slate-700">
+                            <td className="p-1">{i+1}</td>
+                            <td className="p-1 font-semibold">{p.name}</td>
+                            <td className="p-1 font-bold">{p.points}</td>
+                            <td className="p-1">{p.goalDiff > 0 ? `+${p.goalDiff}` : p.goalDiff}</td>
+                            <td className="p-1">{p.goalsFor}:{p.goalsAgainst}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+      </div>
+    );
+}
+
 
 // ===================================================================================
 // TAB: REGELVERSTÖSSE
@@ -1077,7 +1455,7 @@ function ViolationsTab({
   );
   return (
     <div className="grid lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-1 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 self-start">
+      <div className="lg:col-span-1 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 self-start dark:bg-slate-800 dark:border-slate-700">
         <h3 className="text-lg font-semibold mb-3">Neuer Regelverstoß</h3>
         <div className="space-y-3 text-sm">
           <div>
@@ -1085,7 +1463,7 @@ function ViolationsTab({
             <select
               value={playerId}
               onChange={(e) => setPlayerId(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl border border-neutral-300"
+              className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
             >
               <option value="">- auswählen -</option>
               {db.players.map((p) => (
@@ -1100,7 +1478,7 @@ function ViolationsTab({
             <select
               value={type}
               onChange={(e) => setType(e.target.value as ViolationType)}
-              className="w-full px-3 py-2 rounded-xl border border-neutral-300"
+              className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
             >
               {Object.entries(VIOLATION_TYPES).map(([key, label]) => (
                 <option key={key} value={key}>
@@ -1116,7 +1494,7 @@ function ViolationsTab({
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Details..."
-              className="w-full px-3 py-2 rounded-xl border border-neutral-300"
+              className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
             />
           </div>
           <div>
@@ -1138,13 +1516,13 @@ function ViolationsTab({
           </div>
         </div>
       </div>
-      <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+      <div className="lg:col-span-2 bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
         <h3 className="text-lg font-semibold mb-3">
           Protokoll der Regelverstöße
         </h3>
-        <ul className="divide-y">
+        <ul className="divide-y dark:divide-slate-700">
           {sortedViolations.length === 0 && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 dark:text-slate-400">
               Bisher keine Verstöße. Vorbildlich!
             </p>
           )}
@@ -1154,13 +1532,13 @@ function ViolationsTab({
                 <span className="font-bold">
                   {nameOf(db.players, v.playerId)}
                 </span>
-                <span className="text-xs text-gray-400">
+                <span className="text-xs text-gray-400 dark:text-slate-500">
                   {new Date(v.dateISO).toLocaleString()}
                 </span>
               </div>
-              <p className="text-gray-600">{VIOLATION_TYPES[v.type]}</p>
+              <p className="text-gray-600 dark:text-slate-300">{VIOLATION_TYPES[v.type]}</p>
               {v.comment && (
-                <p className="text-xs text-gray-500 italic pl-2 border-l-2 border-gray-200 my-1">
+                <p className="text-xs text-gray-500 italic pl-2 border-l-2 border-gray-200 my-1 dark:text-slate-400 dark:border-slate-600">
                   "{v.comment}"
                 </p>
               )}
@@ -1219,22 +1597,25 @@ function History({
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
     );
   }, [db.matches, db.kingSessions]);
+  
+  const roundNames = {1: "Hinrunde", 2: "Hin- & Rückrunde", 4: "Doppelte Hin- & Rückrunde"};
+
   return (
-    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
       <h2 className="text-xl font-semibold mb-3">Verlauf</h2>
-      <ul className="divide-y">
-        {combinedHistory.map((item) => {
+      <ul className="divide-y dark:divide-slate-700">
+        {combinedHistory.map((item, index) => {
           if (item.type === 'match') {
             const m = item.data;
             return (
               <li
-                key={`match-${m.id}`}
+                key={`match-${m.id}-${index}`}
                 className="py-3 flex items-start justify-between gap-3 text-sm"
               >
                 <div>
                   <div>
                     {new Date(m.dateISO).toLocaleString()} •{' '}
-                    {m.mode === '2v2' ? '2vs2 Spiel' : '1vs1 Spiel'}
+                    {m.mode === '2v2' ? '2vs2 Spiel' : 'Turnierspiel'}
                   </div>
                   <div className="font-semibold text-base">
                     {m.teamAName}{' '}
@@ -1243,7 +1624,7 @@ function History({
                     </span>{' '}
                     {m.teamBName}
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 dark:text-slate-400">
                     Eingetragen von: {m.enteredBy}{' '}
                     {m.sessionId
                       ? `(Session ID: ...${m.sessionId.slice(-4)})`
@@ -1252,7 +1633,7 @@ function History({
                 </div>
                 <button
                   onClick={() => deleteMatch(m.id)}
-                  className="px-2 py-1 rounded-lg border text-red-500 border-red-200 hover:bg-red-50 text-xs"
+                  className="px-2 py-1 rounded-lg border text-red-500 border-red-200 hover:bg-red-50 text-xs dark:border-red-500/30 dark:hover:bg-red-500/10"
                 >
                   Löschen
                 </button>
@@ -1260,15 +1641,21 @@ function History({
             );
           } else {
             const s = item.data;
+            let sessionInfo = '';
+            if (s.mode === '2v2') {
+                sessionInfo = `2v2, Best of ${s.bestOf}`;
+            } else if (s.mode === 'tournament') {
+                sessionInfo = `Turnier, ${s.tournamentParticipants} Spieler, ${roundNames[s.rounds] || 'unbekannt'}`;
+            }
+            
             return (
               <li
-                key={`session-${s.id}`}
-                className="py-3 flex items-start justify-between gap-3 text-sm bg-amber-50/50 px-2 rounded"
+                key={`session-${s.id}-${index}`}
+                className="py-3 flex items-start justify-between gap-3 text-sm bg-amber-50/50 px-2 rounded dark:bg-amber-900/20"
               >
                 <div>
                   <div>
-                    {new Date(s.dateISO).toLocaleString()} • Session-Ende (
-                    {s.mode}, Best of {s.bestOf})
+                    {new Date(s.dateISO).toLocaleString()} • Session-Ende ({sessionInfo})
                   </div>
                   {s.kings.length > 0 ? (
                     <div className="font-semibold">
@@ -1276,12 +1663,12 @@ function History({
                       {s.kings.map((id) => nameOf(db.players, id)).join(' & ')}
                     </div>
                   ) : (
-                    <div className="text-gray-500">
+                    <div className="text-gray-500 dark:text-slate-400">
                       Kein Königstitel für diese Session vergeben.
                     </div>
                   )}
                   {s.kingEnteredBy && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-500 dark:text-slate-400">
                       Eingetragen von: {s.kingEnteredBy}
                     </div>
                   )}
@@ -1289,7 +1676,7 @@ function History({
                 {s.kings.length > 0 && (
                   <button
                     onClick={() => removeKingTitle(s.id)}
-                    className="px-2 py-1 rounded-lg border text-orange-600 border-orange-200 hover:bg-orange-50 text-xs"
+                    className="px-2 py-1 rounded-lg border text-orange-600 border-orange-200 hover:bg-orange-50 text-xs dark:border-orange-500/30 dark:hover:bg-orange-500/10"
                   >
                     Titel entfernen
                   </button>
@@ -1315,6 +1702,7 @@ function Stats({ db, kingInfo }: { db: DB; kingInfo: KingInfo }) {
     });
     return counts;
   }, [db.violations, db.players]);
+
   const playerStats = useMemo(() => {
     return db.players
       .map((p) => ({
@@ -1328,27 +1716,28 @@ function Stats({ db, kingInfo }: { db: DB; kingInfo: KingInfo }) {
           b.longestStreak - a.longestStreak || a.violations - b.violations
       );
   }, [db.players, kingInfo.longestStreaks, violationCounts]);
+
   return (
-    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+    <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
       <h2 className="text-xl font-semibold mb-3">Spielerstatistiken</h2>
       <div className="overflow-x-auto">
         <table className="w-full text-sm border-collapse">
           <thead>
-            <tr className="text-left border-b">
-              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))]">
+            <tr className="text-left border-b dark:border-slate-600">
+              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))] dark:text-slate-400">
                 Spieler
               </th>
-              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))]">
+              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))] dark:text-slate-400">
                 Längste Königsserie
               </th>
-              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))]">
+              <th className="py-2 pr-3 font-medium text-[rgb(var(--muted))] dark:text-slate-400">
                 Regelverstöße
               </th>
             </tr>
           </thead>
           <tbody>
             {playerStats.map((p) => (
-              <tr key={p.id} className="border-b last:border-0">
+              <tr key={p.id} className="border-b last:border-0 dark:border-slate-700">
                 <td className="py-2 pr-3 font-semibold">
                   <PlayerNameDisplay
                     playerId={p.id}
@@ -1397,9 +1786,9 @@ function Settings({
   }
   return (
     <div className="grid md:grid-cols-2 gap-4">
-      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
         <h3 className="text-lg font-semibold mb-3">Spieler verwalten</h3>
-        <ul className="divide-y mb-3">
+        <ul className="divide-y mb-3 dark:divide-slate-700">
           {db.players.map((p) => (
             <li key={p.id} className="py-2 flex items-center justify-between">
               <span>{p.name}</span>
@@ -1417,7 +1806,7 @@ function Settings({
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Neuer Spielername"
-            className="flex-1 px-3 py-2 rounded-xl border border-neutral-300"
+            className="flex-1 px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
           />
           <button
             onClick={addPlayer}
@@ -1427,7 +1816,7 @@ function Settings({
           </button>
         </div>
       </div>
-      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4">
+      <div className="bg-[rgb(var(--paper))] rounded-2xl shadow border border-neutral-200 p-4 dark:bg-slate-800 dark:border-slate-700">
         <h3 className="text-lg font-semibold mb-3">Theme</h3>
         <div className="flex flex-col gap-2">
           {Object.entries(THEMES).map(([key, theme]) => (
@@ -1437,8 +1826,8 @@ function Settings({
                 setDb((prev) => ({ ...prev, theme: key as ThemeKey }))
               }
               className={cls(
-                'px-3 py-2 rounded-xl border w-full text-left',
-                db.theme === key && 'border-[rgb(var(--accent))] border-2'
+                'px-3 py-2 rounded-xl border w-full text-left dark:border-slate-600',
+                db.theme === key ? 'border-[rgb(var(--accent))] border-2' : 'dark:hover:bg-slate-700'
               )}
             >
               {theme.name}
@@ -1472,7 +1861,7 @@ function SelectOrInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="w-full px-3 py-2 rounded-xl border border-neutral-300"
+          className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
         />
         <button onClick={() => setMode('select')} className="text-xs">
           Liste
@@ -1482,7 +1871,7 @@ function SelectOrInput({
   }
   return (
     <select
-      className="w-full px-3 py-2 rounded-xl border border-neutral-300"
+      className="w-full px-3 py-2 rounded-xl border border-neutral-300 dark:bg-slate-700 dark:border-slate-600"
       value={value}
       onChange={(e) => {
         const v = e.target.value;
@@ -1502,3 +1891,4 @@ function SelectOrInput({
     </select>
   );
 }
+
